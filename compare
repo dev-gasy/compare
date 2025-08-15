@@ -1,0 +1,104 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+    echo "Usage: compare [source_branch] [target_branch]"
+    echo ""
+    echo "Compare two git branches and show commit differences in a table format."
+    echo ""
+    echo "Arguments:"
+    echo "  source_branch    Source branch to compare from (optional, defaults to current branch)"
+    echo "  target_branch    Target branch to compare to (required)"
+    echo ""
+    echo "Examples:"
+    echo "  compare main                    # Compare current branch with main"
+    echo "  compare feature/new main        # Compare feature/new with main"
+    echo ""
+    exit 1
+}
+
+check_git_repo() {
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo "Error: Not a git repository"
+        exit 1
+    fi
+}
+
+get_current_branch() {
+    git rev-parse --abbrev-ref HEAD
+}
+
+validate_branch() {
+    local branch="$1"
+    if ! git show-ref --verify --quiet "refs/heads/$branch" && \
+       ! git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        echo "Error: Branch '$branch' does not exist"
+        exit 1
+    fi
+}
+
+format_commits_table() {
+    local source_branch="$1"
+    local target_branch="$2"
+    
+    echo "Commits in '$source_branch' that are not in '$target_branch':"
+    echo ""
+    
+    printf "%-12s %-12s %-20s %s\n" "HASH" "DATE" "AUTHOR" "MESSAGE"
+    printf "%-12s %-12s %-20s %s\n" "----" "----" "------" "-------"
+    
+    git log --pretty=format:"%h|%ad|%an|%s" --date=short "$target_branch..$source_branch" | \
+    while IFS='|' read -r hash date author message; do
+        printf "%-12s %-12s %-20.20s %s\n" "$hash" "$date" "$author" "$message"
+    done
+    
+    echo ""
+    echo "Commits in '$target_branch' that are not in '$source_branch':"
+    echo ""
+    
+    printf "%-12s %-12s %-20s %s\n" "HASH" "DATE" "AUTHOR" "MESSAGE"
+    printf "%-12s %-12s %-20s %s\n" "----" "----" "------" "-------"
+    
+    git log --pretty=format:"%h|%ad|%an|%s" --date=short "$source_branch..$target_branch" | \
+    while IFS='|' read -r hash date author message; do
+        printf "%-12s %-12s %-20.20s %s\n" "$hash" "$date" "$author" "$message"
+    done
+}
+
+main() {
+    check_git_repo
+    
+    local source_branch=""
+    local target_branch=""
+    
+    case $# in
+        0)
+            usage
+            ;;
+        1)
+            source_branch=$(get_current_branch)
+            target_branch="$1"
+            ;;
+        2)
+            source_branch="$1"
+            target_branch="$2"
+            ;;
+        *)
+            echo "Error: Too many arguments"
+            usage
+            ;;
+    esac
+    
+    validate_branch "$source_branch"
+    validate_branch "$target_branch"
+    
+    if [ "$source_branch" = "$target_branch" ]; then
+        echo "Error: Source and target branches are the same"
+        exit 1
+    fi
+    
+    format_commits_table "$source_branch" "$target_branch"
+}
+
+main "$@"
